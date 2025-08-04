@@ -1,46 +1,83 @@
 import os
+import re
 from pathlib import Path
+from datetime import datetime
 
-def rename_files_to_match(source_dir, target_dir):
-    """
-    Renames files in target directory to match corresponding files in source directory.
-    Source files are sorted alphabetically, target files by modification date.
-    """
-    # Verify paths exist
+# ===== SORTING METHODS =====
+def sort_by_name(file):
+    """Sort files alphabetically by name (case-insensitive)."""
+    return file.name.lower()
+
+def sort_by_extension(file):
+    """Sort files by extension, then by name."""
+    return (file.suffix.lower(), file.name.lower())
+
+def sort_by_mtime(file):
+    """Sort files by modification time (oldest first)."""
+    return os.path.getmtime(file)
+
+def sort_by_ctime(file):
+    """Sort files by creation time (oldest first)."""
+    return os.path.getctime(file)
+
+def sort_by_size(file):
+    """Sort files by size (smallest first)."""
+    return file.stat().st_size
+
+def sort_by_numeric_part(file):
+    """Sort files by the first number found in the filename."""
+    match = re.search(r'\d+', file.name)
+    return int(match.group()) if match else 0
+
+# ===== DIRECTORY  =====
+SOURCE_DIR = r"ENTER_SOURCE_PATH_HERE"
+TARGET_DIR = r"ENTER_TARGET_PATH_HERE"
+
+# ===== SORT METHOD =====
+SORT_SOURCE = sort_by_name
+SORT_TARGET = sort_by_mtime
+
+# ===== MAIN FUNCTION =====
+def rename_files_to_match(source_dir, target_dir, sort_method):
+    """Renames files in target_dir to match source_dir, using the specified sorting method."""
     source_path = Path(source_dir)
     target_path = Path(target_dir)
-    
+
     if not source_path.exists():
-        print(f"ERROR: Source directory does not exist: {source_dir}")
-        return
+        raise FileNotFoundError(f"Source directory not found: {source_dir}")
     if not target_path.exists():
-        print(f"ERROR: Target directory does not exist: {target_dir}")
-        return
-    
-    # Sort files differently in each directory
-    source_files = sorted(source_path.iterdir(), key=lambda x: x.name)  # Sort by name
-    target_files = sorted(target_path.iterdir(), key=os.path.getmtime)  # Sort by date
-    
+        raise FileNotFoundError(f"Target directory not found: {target_dir}")
+
+    # Get and sort files using the chosen method
+    source_files = sorted([f for f in source_path.iterdir() if f.is_file()], key=sort_method)
+    target_files = sorted([f for f in target_path.iterdir() if f.is_file()], key=sort_method)
+
     if len(source_files) != len(target_files):
-        print(f"WARNING: Different file counts - Source: {len(source_files)}, Target: {len(target_files)}")
-        return
-    
-    # Rename files while preserving original extensions
-    for src_file, tgt_file in zip(source_files, target_files):
-        if src_file.is_file() and tgt_file.is_file():
-            new_name = tgt_file.with_name(src_file.name).with_suffix(src_file.suffix)
-            
-            # Handle name conflicts
-            if new_name.exists():
-                temp_name = tgt_file.with_name(f"temp_{tgt_file.name}")
-                tgt_file.rename(temp_name)
-                tgt_file = temp_name
-            
-            tgt_file.rename(new_name)
-            print(f"Renamed: {tgt_file.name} -> {new_name.name}")
+        print(f"⚠️ WARNING: File count mismatch (Source: {len(source_files)}, Target: {len(target_files)})")
 
-# Configure your paths here
-source_dir = r"ENTER_TARGET_PATH_HERE"  # Directory with original filenames
-target_dir = r"ENTER_TARGET_PATH_HERE"  # Directory with files to be renamed
+    # Backup directory
+    backup_dir = target_path / "backup_original_files"
+    backup_dir.mkdir(exist_ok=True)
 
-rename_files_to_match(source_dir, target_dir)
+    # Rename files
+    for i, (src, tgt) in enumerate(zip(source_files, target_files)):
+        new_name = tgt.with_stem(src.stem).with_suffix(src.suffix)
+        backup_path = backup_dir / tgt.name
+
+        # Create backup (if not exists)
+        if not backup_path.exists():
+            tgt.rename(backup_path)
+            tgt = backup_path  # Update reference
+
+        # Rename (skip if target exists)
+        if new_name.exists():
+            print(f"⏩ Skipped (exists): {tgt.name} → {new_name.name}")
+        else:
+            tgt.rename(new_name)
+            print(f"✅ Renamed {i+1}/{len(source_files)}: {tgt.name} → {new_name.name}")
+
+    print(f"\n✔️ Done! Original files backed up in: {backup_dir}")
+
+# ===== RUN THE SCRIPT =====
+if __name__ == "__main__":
+    rename_files_to_match(SOURCE_DIR, TARGET_DIR, SORT_METHOD)
